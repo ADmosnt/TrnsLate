@@ -12,9 +12,6 @@ log = logging.getLogger(__name__)
 class ScreenCapture:
     """Captures a region of the screen."""
 
-    def __init__(self):
-        self._sct = mss.mss()
-
     def capture_region(self, x, y, width, height):
         """Capture a screen region and return as PIL Image.
 
@@ -40,8 +37,12 @@ class ScreenCapture:
 
         try:
             log.debug("capture_region: grabbing %s", monitor)
-            screenshot = self._sct.grab(monitor)
-            img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+            # Create a fresh mss instance each time — Windows GDI handles
+            # are thread-local, so a single instance cannot be shared across
+            # the main thread and background worker threads.
+            with mss.mss() as sct:
+                screenshot = sct.grab(monitor)
+                img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
             log.debug("capture_region: ok %dx%d", img.width, img.height)
             return img
         except Exception:
@@ -55,4 +56,4 @@ class ScreenCapture:
         )
 
     def close(self):
-        self._sct.close()
+        pass  # No persistent state to clean up
