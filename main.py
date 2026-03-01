@@ -4,6 +4,7 @@ A transparent overlay window that captures, detects, and translates
 text in real-time, inspired by Android's Google Lens overlay.
 """
 
+import logging
 import os
 import sys
 import argparse
@@ -16,6 +17,8 @@ from overlay import OverlayWindow
 from capture import ScreenCapture
 from ocr import TextDetector
 from translator import TextTranslator
+
+log = logging.getLogger(__name__)
 
 
 class TranslationWorker(QObject):
@@ -44,14 +47,20 @@ class TranslationWorker(QObject):
             region = self._region
 
         if region is None or region.width() <= 0 or region.height() <= 0:
+            log.debug("process: no valid region (region=%s)", region)
             self.status_update.emit("Move overlay over text to translate")
             return
+
+        log.info("process: region=(%d, %d, %d, %d)",
+                 region.x(), region.y(), region.width(), region.height())
 
         try:
             # Capture
             self.status_update.emit("Capturing...")
             image = self._capture.capture_rect(region)
             if image is None:
+                log.warning("process: capture returned None for region (%d, %d, %d, %d)",
+                            region.x(), region.y(), region.width(), region.height())
                 self.status_update.emit("Capture failed")
                 return
 
@@ -240,5 +249,16 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+
+    level = logging.DEBUG if os.environ.get("DEBUG", "").lower() in ("1", "true") else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    log.info("TrnsLate starting — source=%s target=%s gpu=%s interval=%dms",
+             args.source, args.target, args.gpu, args.interval)
+
     app = TrnsLateApp(args)
     sys.exit(app.run())
