@@ -123,30 +123,34 @@ class OverlayWindow(QWidget):
         # Render translated text blocks
         if self._translated_blocks and self._translating:
             painter.setFont(QFont("Segoe UI", 10))
+            fm = painter.fontMetrics()
             for block in self._translated_blocks:
                 bx, by, bw, bh, text = block
-                # Offset by title bar and grip
-                rx = bx + self.GRIP_SIZE
-                ry = by + content_y
+                # Original bbox centre in widget coordinates
+                cx = bx + self.GRIP_SIZE + bw // 2
+                cy = by + content_y + bh // 2
+
+                # Measure text size (allow it to grow vertically)
+                render_w = max(bw, 80)
+                text_rect = fm.boundingRect(
+                    QRect(0, 0, render_w, 9999),
+                    Qt.AlignCenter | Qt.TextWordWrap, text
+                )
+                # Centre the measured rect over the original bbox
+                text_rect.moveCenter(QPoint(cx, cy))
 
                 # Background behind translated text
-                painter.setBrush(QColor(0, 0, 0, 200))
+                padding = 4
+                bg_rect = text_rect.adjusted(-padding, -padding, padding, padding)
+                painter.setBrush(QColor(0, 0, 0, 210))
                 painter.setPen(Qt.NoPen)
-                text_rect = painter.fontMetrics().boundingRect(
-                    QRect(rx, ry, bw, bh),
-                    Qt.AlignLeft | Qt.TextWordWrap, text
-                )
-                padding = 3
-                painter.drawRoundedRect(
-                    text_rect.adjusted(-padding, -padding, padding, padding),
-                    3, 3
-                )
+                painter.drawRoundedRect(bg_rect, 4, 4)
 
                 # Translated text
                 painter.setPen(QColor(100, 255, 100))
                 painter.drawText(
-                    QRect(rx, ry, bw, bh),
-                    Qt.AlignLeft | Qt.TextWordWrap,
+                    text_rect,
+                    Qt.AlignCenter | Qt.TextWordWrap,
                     text
                 )
 

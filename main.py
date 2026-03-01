@@ -29,21 +29,17 @@ class TranslationWorker(QObject):
     status_update = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
 
-    def __init__(self, capture, detector, translator):
+    def __init__(self, detector, translator):
         super().__init__()
-        self._capture = capture
         self._detector = detector
         self._translator = translator
-        self._region = None
-        self._running = False
         self._force_next = False
         self._last_img_hash = None
         self._lock = threading.Lock()
 
-    def set_region(self, rect):
+    def invalidate_cache(self):
+        """Clear cached image hash so next cycle always runs."""
         with self._lock:
-            self._region = rect
-            # Region moved/resized — invalidate cached image so next cycle runs
             self._last_img_hash = None
 
     def force_next(self):
@@ -51,27 +47,13 @@ class TranslationWorker(QObject):
         with self._lock:
             self._force_next = True
 
-    def process(self):
-        """Run one capture -> OCR -> translate cycle."""
+    def process_image(self, image):
+        """Run OCR + translate on a pre-captured image."""
         with self._lock:
-            region = self._region
             force = self._force_next
             self._force_next = False
 
-        if region is None or region.width() <= 0 or region.height() <= 0:
-            log.debug("process: no valid region (region=%s)", region)
-            self.status_update.emit("Move overlay over text to translate")
-            return
-
         try:
-            # Capture
-            image = self._capture.capture_rect(region)
-            if image is None:
-                log.warning("process: capture returned None for region (%d, %d, %d, %d)",
-                            region.x(), region.y(), region.width(), region.height())
-                self.status_update.emit("Capture failed")
-                return
-
             # Compare with previous capture — skip if unchanged
             thumb = image.resize((64, 64))
             img_hash = hashlib.md5(thumb.tobytes()).digest()
@@ -80,9 +62,7 @@ class TranslationWorker(QObject):
                 return
             self._last_img_hash = img_hash
 
-            log.info("process: change detected, region=(%d, %d, %d, %d)%s",
-                     region.x(), region.y(), region.width(), region.height(),
-                     " [forced]" if force else "")
+            log.info("process: translating%s", " [forced]" if force else "")
 
             # OCR
             self.status_update.emit("Detecting text...")
@@ -129,15 +109,15 @@ class TrnsLateApp:
             opacity=args.opacity
         )
 
-        # Worker for background processing
-        self._worker = TranslationWorker(
-            self._capture, self._detector, self._translator
-        )
+        # Worker for background processing (no longer owns capture)
+        self._worker = TranslationWorker(self._detector, self._translator)
 
         # Connect signals
         self._worker.results_ready.connect(self._overlay.set_translated_blocks)
         self._worker.status_update.connect(self._overlay.set_status)
-        self._overlay.region_changed.connect(self._worker.set_region)
+        self._overlay.region_changed.connect(
+            lambda _rect: self._worker.invalidate_cache()
+        )
         self._overlay.translate_toggled.connect(self._on_toggle)
         self._overlay.refresh_requested.connect(self._on_refresh)
 
@@ -150,24 +130,75 @@ class TrnsLateApp:
         # Processing thread
         self._thread = None
         self._processing = False
+        self._excluded_from_capture = False
+
+    # --- Screen-capture exclusion ---
+
+    def _try_exclude_from_capture(self):
+        """Make overlay invisible to screenshot APIs (Windows 10 2004+)."""
+        try:
+            import ctypes
+            hwnd = int(self._overlay.winId())
+            WDA_EXCLUDEFROMCAPTURE = 0x00000011
+            if ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE):
+                self._excluded_from_capture = True
+                log.info("Overlay excluded from screen capture via SetWindowDisplayAffinity")
+            else:
+                log.warning("SetWindowDisplayAffinity failed — will hide overlay during capture")
+        except Exception as e:
+            log.debug("SetWindowDisplayAffinity unavailable: %s — will hide overlay during capture", e)
+
+    # --- Translation cycle ---
 
     def _run_cycle(self):
-        """Run a translation cycle in a background thread."""
+        """Run a translation cycle."""
         if self._processing:
-            return  # Skip if previous cycle still running
+            return
 
         region = self._overlay.get_capture_region()
-        self._worker.set_region(region)
+        if region is None or region.width() <= 0 or region.height() <= 0:
+            return
 
         self._processing = True
+
+        if self._excluded_from_capture:
+            # Overlay is invisible to mss — capture directly in background
+            self._thread = threading.Thread(
+                target=self._bg_capture_and_process, args=(region,), daemon=True
+            )
+            self._thread.start()
+        else:
+            # Must hide overlay so we don't screenshot our own text
+            self._overlay.setWindowOpacity(0)
+            QTimer.singleShot(60, lambda: self._capture_while_hidden(region))
+
+    def _capture_while_hidden(self, region):
+        """Capture screen while overlay is transparent, then restore."""
+        image = self._capture.capture_rect(region)
+        self._overlay.setWindowOpacity(1.0)
+
+        if image is None:
+            self._processing = False
+            return
+
         self._thread = threading.Thread(
-            target=self._process_and_finish, daemon=True
+            target=self._bg_process_image, args=(image,), daemon=True
         )
         self._thread.start()
 
-    def _process_and_finish(self):
+    def _bg_capture_and_process(self, region):
+        """Background thread: capture + OCR + translate."""
         try:
-            self._worker.process()
+            image = self._capture.capture_rect(region)
+            if image is not None:
+                self._worker.process_image(image)
+        finally:
+            self._processing = False
+
+    def _bg_process_image(self, image):
+        """Background thread: OCR + translate a pre-captured image."""
+        try:
+            self._worker.process_image(image)
         finally:
             self._processing = False
 
@@ -188,6 +219,7 @@ class TrnsLateApp:
 
     def run(self):
         self._overlay.show()
+        self._try_exclude_from_capture()
         self._overlay.set_status(
             "Ready — move overlay over text | Ctrl+T toggle | Ctrl+Q quit"
         )
