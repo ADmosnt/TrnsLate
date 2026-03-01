@@ -19,9 +19,9 @@ fi
 echo "=== TrnsLate — CPU-only Installation ==="
 echo ""
 
-# Install torch CPU version first
+# Install torch CPU version first (pinned to stable release to avoid DLL issues)
 echo "[1/2] Installing PyTorch (CPU only)..."
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies
 echo "[2/2] Installing TrnsLate dependencies..."
