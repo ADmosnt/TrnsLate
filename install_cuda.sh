@@ -7,6 +7,19 @@
 
 set -e
 
+# Check for Visual C++ Redistributable on Windows (needed by PyTorch)
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
+    if ! ls /c/Windows/System32/vcruntime140.dll &>/dev/null && \
+       ! ls /c/Windows/System32/VCRUNTIME140.dll &>/dev/null; then
+        echo "[!] Microsoft Visual C++ Redistributable not found."
+        echo "    PyTorch requires it to run on Windows."
+        echo "    Download: https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        echo ""
+        read -p "Continue anyway? [y/N] " choice
+        [[ "$choice" != [yY]* ]] && exit 1
+    fi
+fi
+
 CUDA_VERSION="${1:-cu126}"
 
 if [ "$CUDA_VERSION" = "cu128" ]; then
