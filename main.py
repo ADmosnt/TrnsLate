@@ -4,6 +4,7 @@ A transparent overlay window that captures, detects, and translates
 text in real-time, inspired by Android's Google Lens overlay.
 """
 
+import os
 import sys
 import argparse
 import threading
@@ -167,36 +168,71 @@ class TrnsLateApp:
         return self._app.exec_()
 
 
+def _load_env():
+    """Load .env file from the script's directory."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip()
+                # Don't override existing env vars or CLI args
+                if key not in os.environ:
+                    os.environ[key] = value
+
+
+def _env(key, default):
+    """Get a value from env, returning default if not set."""
+    return os.environ.get(key, default)
+
+
+def _env_bool(key, default=False):
+    """Get a boolean value from env."""
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    return val.lower() in ("true", "1", "yes")
+
+
 def parse_args():
+    _load_env()
+
     parser = argparse.ArgumentParser(
         description="TrnsLate — Real-time screen text translation overlay"
     )
     parser.add_argument(
-        "--source", default="en",
+        "--source", default=_env("SOURCE", "en"),
         help="Source language code (default: en)"
     )
     parser.add_argument(
-        "--target", default="es",
+        "--target", default=_env("TARGET", "es"),
         help="Target language code (default: es)"
     )
     parser.add_argument(
-        "--opacity", type=float, default=0.25,
+        "--opacity", type=float, default=float(_env("OPACITY", "0.25")),
         help="Overlay opacity 0.0-1.0 (default: 0.25)"
     )
     parser.add_argument(
-        "--width", type=int, default=500,
+        "--width", type=int, default=int(_env("WIDTH", "500")),
         help="Initial window width (default: 500)"
     )
     parser.add_argument(
-        "--height", type=int, default=350,
+        "--height", type=int, default=int(_env("HEIGHT", "350")),
         help="Initial window height (default: 350)"
     )
     parser.add_argument(
-        "--interval", type=int, default=3000,
+        "--interval", type=int, default=int(_env("INTERVAL", "3000")),
         help="Translation interval in ms (default: 3000)"
     )
     parser.add_argument(
         "--gpu", action="store_true",
+        default=_env_bool("GPU"),
         help="Enable GPU acceleration for OCR (requires CUDA-compatible torch)"
     )
     return parser.parse_args()
