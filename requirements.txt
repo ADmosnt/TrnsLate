@@ -4,3 +4,16 @@ easyocr>=1.7.0
 deep-translator>=1.11.0
 Pillow>=10.0.0
 numpy>=1.24.0
+
+# PyTorch with CUDA — install manually BEFORE pip install -r requirements.txt
+# For RTX 5060 / Blackwell (cu128 nightly):
+#   pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128
+#
+# For RTX 40xx series (cu124):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#
+# For RTX 30xx series (cu121):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#
+# For CPU only (no GPU acceleration):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu

@@ -87,7 +87,7 @@ class TrnsLateApp:
 
         # Initialize components
         self._capture = ScreenCapture()
-        self._detector = TextDetector(languages=[args.source])
+        self._detector = TextDetector(languages=[args.source], use_gpu=args.gpu)
         self._translator = TextTranslator(
             source=args.source, target=args.target
         )
@@ -194,6 +194,10 @@ def parse_args():
     parser.add_argument(
         "--interval", type=int, default=3000,
         help="Translation interval in ms (default: 3000)"
+    )
+    parser.add_argument(
+        "--gpu", action="store_true",
+        help="Enable GPU acceleration for OCR (requires CUDA-compatible torch)"
     )
     return parser.parse_args()
 

@@ -7,16 +7,17 @@ import numpy as np
 class TextDetector:
     """Detects text in images using EasyOCR."""
 
-    def __init__(self, languages=None):
+    def __init__(self, languages=None, use_gpu=False):
         """Initialize the OCR reader.
 
         Args:
             languages: List of language codes (e.g., ['en', 'es']).
                        Defaults to ['en'].
+            use_gpu: Whether to use GPU acceleration (requires CUDA-compatible torch).
         """
         if languages is None:
             languages = ["en"]
-        self._reader = easyocr.Reader(languages, gpu=False)
+        self._reader = easyocr.Reader(languages, gpu=use_gpu)
 
     def detect(self, image):
         """Detect text in a PIL Image.
