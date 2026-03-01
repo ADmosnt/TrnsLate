@@ -4,6 +4,7 @@ easyocr>=1.7.0
 deep-translator>=1.11.0
 Pillow>=10.0.0
 numpy>=1.24.0
+opencv-python>=4.8.0
 
 # PyTorch with CUDA — install manually BEFORE pip install -r requirements.txt
 # For RTX 5060 / Blackwell (cu128 nightly):

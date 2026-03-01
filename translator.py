@@ -52,23 +52,20 @@ class TextTranslator:
         """
         translated = []
 
-        # Batch translate: collect all texts
         texts = [b["text"] for b in blocks if b["text"].strip()]
         if not texts:
             return translated
 
-        # Translate all at once if possible, fall back to individual
+        # Use the library's native batch method instead of fragile delimiter joins
         try:
-            combined = "\n||\n".join(texts)
-            result = self.translate(combined)
-            parts = result.split("\n||\n") if result else []
-
-            if len(parts) == len(texts):
+            parts = self._translator.translate_batch(texts)
+            if parts and len(parts) == len(texts):
                 idx = 0
                 for block in blocks:
                     if block["text"].strip():
                         x, y, w, h = block["bbox"]
-                        translated.append((x, y, w, h, parts[idx].strip()))
+                        tr_text = parts[idx].strip() if parts[idx] else ""
+                        translated.append((x, y, w, h, tr_text))
                         idx += 1
                 return translated
         except Exception:

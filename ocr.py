@@ -1,5 +1,6 @@
-"""OCR module using EasyOCR."""
+"""OCR module using EasyOCR with manga-optimized preprocessing."""
 
+import cv2
 import easyocr
 import numpy as np
 
@@ -8,46 +9,53 @@ class TextDetector:
     """Detects text in images using EasyOCR."""
 
     def __init__(self, languages=None, use_gpu=False):
-        """Initialize the OCR reader.
-
-        Args:
-            languages: List of language codes (e.g., ['en', 'es']).
-                       Defaults to ['en'].
-            use_gpu: Whether to use GPU acceleration (requires CUDA-compatible torch).
-        """
         if languages is None:
             languages = ["en"]
         self._reader = easyocr.Reader(languages, gpu=use_gpu)
 
+    @staticmethod
+    def _preprocess(img_array):
+        """Clean image for OCR: grayscale, denoise screentones, binarize."""
+        if len(img_array.shape) == 3:
+            gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            gray = img_array
+
+        # Median blur removes manga screentone dots without blurring letter edges
+        blurred = cv2.medianBlur(gray, 3)
+
+        # Otsu binarization: auto-threshold to pure black/white
+        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        return binary
+
     def detect(self, image):
         """Detect text in a PIL Image.
 
-        Args:
-            image: PIL.Image.Image
-
-        Returns:
-            List of detected text blocks:
-            [
-                {
-                    "bbox": (x, y, w, h),  # bounding box relative to image
-                    "text": str,            # detected text
-                    "confidence": float     # 0.0 to 1.0
-                },
-                ...
-            ]
+        Returns list of dicts with 'bbox', 'text', 'confidence' keys.
+        Uses paragraph grouping to merge speech bubble lines.
         """
         if image is None:
             return []
 
         img_array = np.array(image)
-        results = self._reader.readtext(img_array)
+        clean = self._preprocess(img_array)
+
+        # paragraph=True groups nearby lines into coherent blocks (speech bubbles)
+        # x_ths/y_ths control horizontal/vertical grouping tolerance
+        results = self._reader.readtext(
+            clean, paragraph=True, x_ths=1.0, y_ths=0.5
+        )
 
         blocks = []
-        for (bbox_points, text, confidence) in results:
-            if confidence < 0.3:
-                continue
+        for result in results:
+            if len(result) == 3:
+                bbox_points, text, confidence = result
+                if confidence < 0.3:
+                    continue
+            else:
+                bbox_points, text = result
+                confidence = 1.0
 
-            # bbox_points is [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
             xs = [p[0] for p in bbox_points]
             ys = [p[1] for p in bbox_points]
             x = int(min(xs))

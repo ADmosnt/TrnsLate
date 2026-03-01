@@ -122,32 +122,35 @@ class OverlayWindow(QWidget):
 
         # Render translated text blocks
         if self._translated_blocks and self._translating:
-            painter.setFont(QFont("Segoe UI", 10))
-            fm = painter.fontMetrics()
             for block in self._translated_blocks:
                 bx, by, bw, bh, text = block
                 # Original bbox centre in widget coordinates
                 cx = bx + self.GRIP_SIZE + bw // 2
                 cy = by + content_y + bh // 2
 
-                # Measure text size (allow it to grow vertically)
-                render_w = max(bw, 80)
+                # Dynamic font size based on bbox height
+                font_size = max(9, min(24, int(bh * 0.20)))
+                painter.setFont(QFont("Segoe UI", font_size, QFont.Bold))
+                fm = painter.fontMetrics()
+
+                # Spanish is ~30% wider than English; scale bbox width
+                render_w = max(int(bw * 1.3), font_size * 5)
+
                 text_rect = fm.boundingRect(
                     QRect(0, 0, render_w, 9999),
                     Qt.AlignCenter | Qt.TextWordWrap, text
                 )
-                # Centre the measured rect over the original bbox
                 text_rect.moveCenter(QPoint(cx, cy))
 
-                # Background behind translated text
-                padding = 4
+                # Near-opaque background to cover original text
+                padding = 5
                 bg_rect = text_rect.adjusted(-padding, -padding, padding, padding)
-                painter.setBrush(QColor(0, 0, 0, 210))
+                painter.setBrush(QColor(0, 0, 0, 230))
                 painter.setPen(Qt.NoPen)
-                painter.drawRoundedRect(bg_rect, 4, 4)
+                painter.drawRoundedRect(bg_rect, 6, 6)
 
-                # Translated text
-                painter.setPen(QColor(100, 255, 100))
+                # White text for readability
+                painter.setPen(QColor(255, 255, 255))
                 painter.drawText(
                     text_rect,
                     Qt.AlignCenter | Qt.TextWordWrap,
