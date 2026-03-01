@@ -4,6 +4,7 @@ A transparent overlay window that captures, detects, and translates
 text in real-time, inspired by Android's Google Lens overlay.
 """
 
+import hashlib
 import logging
 import os
 import sys
@@ -35,28 +36,35 @@ class TranslationWorker(QObject):
         self._translator = translator
         self._region = None
         self._running = False
+        self._force_next = False
+        self._last_img_hash = None
         self._lock = threading.Lock()
 
     def set_region(self, rect):
         with self._lock:
             self._region = rect
+            # Region moved/resized — invalidate cached image so next cycle runs
+            self._last_img_hash = None
+
+    def force_next(self):
+        """Force the next cycle to run regardless of image changes."""
+        with self._lock:
+            self._force_next = True
 
     def process(self):
         """Run one capture -> OCR -> translate cycle."""
         with self._lock:
             region = self._region
+            force = self._force_next
+            self._force_next = False
 
         if region is None or region.width() <= 0 or region.height() <= 0:
             log.debug("process: no valid region (region=%s)", region)
             self.status_update.emit("Move overlay over text to translate")
             return
 
-        log.info("process: region=(%d, %d, %d, %d)",
-                 region.x(), region.y(), region.width(), region.height())
-
         try:
             # Capture
-            self.status_update.emit("Capturing...")
             image = self._capture.capture_rect(region)
             if image is None:
                 log.warning("process: capture returned None for region (%d, %d, %d, %d)",
@@ -64,11 +72,23 @@ class TranslationWorker(QObject):
                 self.status_update.emit("Capture failed")
                 return
 
+            # Compare with previous capture — skip if unchanged
+            thumb = image.resize((64, 64))
+            img_hash = hashlib.md5(thumb.tobytes()).digest()
+            if not force and img_hash == self._last_img_hash:
+                log.debug("process: image unchanged, skipping")
+                return
+            self._last_img_hash = img_hash
+
+            log.info("process: change detected, region=(%d, %d, %d, %d)%s",
+                     region.x(), region.y(), region.width(), region.height(),
+                     " [forced]" if force else "")
+
             # OCR
             self.status_update.emit("Detecting text...")
             blocks = self._detector.detect(image)
             if not blocks:
-                self.status_update.emit("No text detected")
+                self.status_update.emit("No text detected — Ctrl+R to retry")
                 self.results_ready.emit([])
                 return
 
@@ -79,7 +99,7 @@ class TranslationWorker(QObject):
             translated = self._translator.translate_blocks(blocks)
             self.status_update.emit(
                 f"Translated {len(translated)} block(s) | "
-                f"Right-click for options | Ctrl+T pause"
+                f"Ctrl+R refresh | Ctrl+T pause"
             )
             self.results_ready.emit(translated)
 
@@ -163,6 +183,7 @@ class TrnsLateApp:
 
     def _on_refresh(self):
         if self._active:
+            self._worker.force_next()
             self._run_cycle()
 
     def run(self):
