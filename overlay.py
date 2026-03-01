@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QSystemTrayIcon
 )
 from PyQt5.QtCore import Qt, QTimer, QRect, QPoint, pyqtSignal
-from PyQt5.QtGui import QPainter, QColor, QFont, QPen, QCursor
+from PyQt5.QtGui import QPainter, QColor, QFont, QFontMetrics, QPen, QCursor
 
 
 class GripEdge:
@@ -91,6 +91,22 @@ class OverlayWindow(QWidget):
             self.height() - self.TITLE_BAR_HEIGHT - self.GRIP_SIZE
         )
 
+    # --- Font fitting ---
+
+    @staticmethod
+    def _fit_font(text, max_w, max_h):
+        """Find the largest font (20→8pt) that fits *text* in max_w × max_h."""
+        for size in range(20, 7, -1):
+            font = QFont("Segoe UI", size)
+            fm = QFontMetrics(font)
+            rect = fm.boundingRect(
+                QRect(0, 0, max_w, 9999),
+                Qt.AlignCenter | Qt.TextWordWrap, text
+            )
+            if rect.height() <= max_h:
+                return font
+        return QFont("Segoe UI", 8)
+
     # --- Painting ---
 
     def paintEvent(self, event):
@@ -124,37 +140,26 @@ class OverlayWindow(QWidget):
         if self._translated_blocks and self._translating:
             for block in self._translated_blocks:
                 bx, by, bw, bh, text = block
-                # Original bbox centre in widget coordinates
-                cx = bx + self.GRIP_SIZE + bw // 2
-                cy = by + content_y + bh // 2
+                # Original bbox position in widget coordinates
+                rx = bx + self.GRIP_SIZE
+                ry = by + content_y
+                box = QRect(rx, ry, bw, bh)
 
-                # Dynamic font size based on bbox height
-                font_size = max(9, min(24, int(bh * 0.20)))
-                painter.setFont(QFont("Segoe UI", font_size, QFont.Bold))
-                fm = painter.fontMetrics()
-
-                # Spanish is ~30% wider than English; scale bbox width
-                render_w = max(int(bw * 1.3), font_size * 5)
-
-                text_rect = fm.boundingRect(
-                    QRect(0, 0, render_w, 9999),
-                    Qt.AlignCenter | Qt.TextWordWrap, text
-                )
-                text_rect.moveCenter(QPoint(cx, cy))
+                # Find largest font that fits the translated text inside the bbox
+                font = self._fit_font(text, bw, bh)
+                painter.setFont(font)
 
                 # Near-opaque background to cover original text
-                padding = 5
-                bg_rect = text_rect.adjusted(-padding, -padding, padding, padding)
-                painter.setBrush(QColor(0, 0, 0, 230))
+                padding = 3
+                bg_rect = box.adjusted(-padding, -padding, padding, padding)
+                painter.setBrush(QColor(255, 255, 255, 230))
                 painter.setPen(Qt.NoPen)
-                painter.drawRoundedRect(bg_rect, 6, 6)
+                painter.drawRoundedRect(bg_rect, 4, 4)
 
-                # White text for readability
-                painter.setPen(QColor(255, 255, 255))
+                # Black text on white background (matches manga style)
+                painter.setPen(QColor(0, 0, 0))
                 painter.drawText(
-                    text_rect,
-                    Qt.AlignCenter | Qt.TextWordWrap,
-                    text
+                    box, Qt.AlignCenter | Qt.TextWordWrap, text
                 )
 
         # Status bar at bottom
